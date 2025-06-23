@@ -73,6 +73,14 @@ def jet_veto_map(
     jet_phi = jet.phi
     jet_eta = jet.eta
 
+    #https://cms-talk.web.cern.ch/t/jet-veto-maps-for-run3-data/18444
+    jet_eep_mask = (
+        (jet.pt > 30) &
+        (jet.jetId >= 2)
+    )
+
+    jet_phi_eep = jet_phi[jet_eep_mask]
+    jet_eta_eep = jet_eta[jet_eep_mask]
     # for some reason, math.pi is not included in the ranges, so we need to subtract a small number
     pi = math.pi - 1e-10
 
@@ -111,9 +119,17 @@ def jet_veto_map(
         "eta": jet_eta[jet_mask],
         "phi": jet_phi[jet_mask],
     }
+    variable_map_eep = {
+        "type": f"{self.veto_map_name}_eep",
+        "eta": jet_eta[jet_eep_mask],
+        "phi": jet_phi[jet_eep_mask],
+    }
+
     inputs = [variable_map[inp.name] for inp in self.veto_map.inputs]
+    inputs_eep = [variable_map_eep[inp.name] for inp in self.veto_map.inputs]    
     # the map value is 0.0 for good jets, so define a mask that is True when a jet is vetoed
     veto_mask_sel = self.veto_map(*inputs) != 0
+    veto_mask_sel_eep = self.veto_map(*inputs_eep) != 0    
 
     # optionally fold with negated mask
     if self.negated_veto_map_name:
@@ -124,14 +140,18 @@ def jet_veto_map(
     # insert back into full jet mask in-place
     flat_jet_mask = flat_np_view(jet_mask)
     flat_jet_mask[flat_jet_mask] = ak.flatten(veto_mask_sel)
-
+    flat_jet_eep_mask = flat_np_view(jet_eep_mask)
+    flat_jet_eep_mask[flat_jet_eep_mask] = ak.flatten(veto_mask_sel_eep)
     # store the per-jet veto mask for further processing
     # note: to be consistent with conventions, the exported values should be True for passing jets
     events = set_ak_column(events, "Jet.veto_map_mask", ~jet_mask)
+    events = set_ak_column(events, "Jet.veto_map_mask_eep", ~jet_eep_mask)
 
     # create the selection result, letting events pass if no jets are vetoed
     results = SelectionResult(
-        steps={"jet_veto_map": ~ak.any(jet_mask, axis=1)},
+        steps={"jet_veto_map": ~ak.any(jet_mask, axis=1),
+               "jet_eep_veto_mask": ~ak.any(jet_eep_mask, axis=1)},
+        
     )
 
     return events, results
